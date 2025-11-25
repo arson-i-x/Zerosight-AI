@@ -1,5 +1,5 @@
 # -----------------------------------------------------------
-# Ari Sean and Brenden Richard
+# Ari Sean and Brendon Richard
 # 11/25/2025
 # CS 442 - Dr. Liang
 #
@@ -95,3 +95,4 @@ except KeyboardInterrupt:
     stream.stop_stream()
     stream.close()
     p.terminate()
+
