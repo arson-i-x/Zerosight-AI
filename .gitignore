@@ -1,1 +1,9 @@
 node_modules/
+.env*
+.DS_Store
+dist/
+.vscode/
+backend/.env.local
+frontend/.env.local   
+/device/__pycache__
+/device/venv

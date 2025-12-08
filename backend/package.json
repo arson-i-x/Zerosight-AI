@@ -1,0 +1,45 @@
+{
+  "name": "zerosight-ai",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev:backend": "dotenv -e .env.local -- tsx ./index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node ./dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arson-i-x/Zerosight-AI.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/arson-i-x/Zerosight-AI/issues"
+  },
+  "homepage": "https://github.com/arson-i-x/Zerosight-AI#readme",
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.1.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "@supabase/supabase-js": "^2.86.2",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.2",
+    "fastify-jwt": "^4.1.3",
+    "jose": "^6.1.3",
+    "jsonwebtoken": "^9.0.3",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.10.1",
+    "cross-env": "^10.1.0",
+    "dotenv-cli": "^11.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
