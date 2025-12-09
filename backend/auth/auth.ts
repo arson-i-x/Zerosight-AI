@@ -1,12 +1,28 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import { getSupabaseClient, verify_device_action, verify_device_exists, verify_device_key } from "../utils/db.ts";
+import { get_device_credential_from_api_key, get_device_credential_from_UUID, getSupabaseClient, verify_device_action } from "../utils/db.ts";
 import jwt from "jsonwebtoken";
 
 const supabase = getSupabaseClient();
 
-async function verify_jwt(req: FastifyRequest, reply: FastifyReply) {
-  console.log("verify_jwt called, Authorization header:", req.headers.authorization ? "present" : "missing");
+async function get_device_credentials(req: FastifyRequest, deviceId: string) {
+  try {
+    const deviceData = await get_device_credential_from_UUID(deviceId);
+    (req as any).device_credentials = deviceData;
+    return deviceData;
+  } catch (err) {
+    const apiKey = (req.headers as any)["x-device-key"] as string | '';
+    try {
+      const deviceData = await get_device_credential_from_api_key(apiKey);
+      (req as any).device_credentials = deviceData;
+      return deviceData;
+    } catch (err) {
+      console.log("Error verifying device key:", err);
+    }
+  }
+}
   
+
+async function verify_jwt(req: FastifyRequest, reply: FastifyReply) {
   try {
     const auth = (req.headers.authorization || "").trim();
     if (!auth || !auth.toLowerCase().startsWith("bearer ")) {
@@ -41,8 +57,6 @@ async function verify_jwt(req: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-
-
 async function verify_exists(req: FastifyRequest, reply: FastifyReply) {
     // try params/query/body first
     let deviceId =
@@ -50,70 +64,41 @@ async function verify_exists(req: FastifyRequest, reply: FastifyReply) {
       (req.query as any)?.device_id ||
       (req.body as any)?.device_id;
 
-    try {
-      if (deviceId) {
-        const data = await verify_device_exists(deviceId);
-      }
-    } catch (err) {
-      console.log("Error verifying device existence:", err);
-      return reply.status(404).send({ error: "Device not found" });
-    }
+    // try device_id to get credentials or fall back to api key
+    (req as any).device_credentials = await get_device_credentials(req, deviceId);
 
-    // try header next
-    const apiKey = (req.headers as any)["x-device-key"] as string | undefined;
-    try {
-      if (!deviceId) {
-        const data = await verify_device_key(apiKey || '');
-        deviceId = data?.id;
-      } 
-    } catch (err) {
-      console.log("Error verifying device key:", err);
-      return reply.status(403).send({ error: "Invalid device key" });
-    }
+    (req as any).device_id = (req as any).device_credentials.device_uuid;
 
-    if (!deviceId) {
-      console.log("No device_id provided in request");
+    if (!(req as any).device_credentials || !(req as any).device_id) {
       return reply.status(400).send({ error: "No device_id provided" });
     }
-
-    // attach resolved device to request
-    (req as any).device = { id: deviceId };
 }
 
 async function verify_action(req: FastifyRequest, reply: FastifyReply) {
     await verify_jwt(req, reply);  
     if ((reply as any).sent) return;
-
+    // try params/query/body first
     let deviceId =
       (req.params as any)?.device_id ||
       (req.query as any)?.device_id ||
       (req.body as any)?.device_id;
+    const userId = (req as any).user.id;
 
-    // If no deviceId, try device API key header
+    // try device_id to get credentials or fall back to api key
+    (req as any).device_credentials = await get_device_credentials(req, deviceId);
+
+    (req as any).device_id = (req as any).device_credentials.device_uuid;
+
+    if (!(req as any).device_credentials || !(req as any).device_id) {
+      return reply.status(400).send({ error: "No device_id provided" });
+    }
+
     try {
-      if (!deviceId) {
-        const apiKey = (req.headers as any)["x-device-key"] as string | undefined;
-        console.log("Verifying device key from header:", apiKey ? "present" : "missing");
-        apiKey && await verify_device_key(apiKey);
-      } 
+      await verify_device_action(deviceId, userId);
     } catch (err) {
-      return reply.status(403).send({ error: `Invalid device key ${err}`  });
+      console.log("Error verifying device action:", err);
+      return reply.status(403).send({ error: "Device not authorized for this user" });
     }
-
-    let userId = (req as any).user?.id || null;
-
-    if (!userId) {
-        return reply.status(401).send({ error: "No user information" });
-    }
-
-    const deviceData = await verify_device_action(deviceId, userId);
-    if (!deviceData) {
-        console.log("Device not associated with user:", deviceId, userId);
-        return reply.status(403).send({ error: "Device not associated with user" });
-    }
-
-    // attach resolved device to request (use db-backed deviceData if available)
-    (req as any).device = deviceData;
 }
 
 export { verify_jwt, verify_exists, verify_action };

@@ -94,7 +94,8 @@ class SoundRecognizer:
 
         detection = self._evaluate_audio(audio)
         if detection:
-            detection["timestamp"] = time.time()
+            # use iso format for timestamps
+            detection["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         return detection
 
     def _evaluate_audio(self, audio):

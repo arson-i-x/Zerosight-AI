@@ -1,27 +1,22 @@
 // events.ts
-import { verify_action, verify_jwt } from "../auth/auth.ts";
+import { verify_exists, verify_jwt } from "../auth/auth.ts";
 import { add_event, fetch_events } from "../utils/db.ts";
 import type { FastifyPluginAsync } from "fastify";
 
 const events_plugin: FastifyPluginAsync = async (fastify, opts) => {
     // Devices send events here
-    fastify.post("/events/add_event", { preHandler: verify_action }, async (req, reply) => {
-        const device = (req as any).device;
-        const user_id = device.user_id;
-        const device_id = device.id;
-        const { event_type, timestamp, details } = req.body as any;
-
-        if (!user_id) {
-            return reply.status(400).send({ error: "Device not claimed by user yet" });
-        }
-        if (!event_type || !timestamp) {
-            return reply.status(400).send({ error: "Missing event_type or timestamp" });
+    fastify.post("/events/add_event", { preHandler: verify_exists }, async (req, reply) => {
+        const device_credential_id = (req as any).device_credentials.id;
+        const { event_type, created_at, details } = req.body as any;
+        console.log("Received event:", { device_credential_id, event_type, created_at, details });
+        if (!event_type || !created_at) {
+            return reply.status(400).send({ error: "Missing event_type or created_at" });
         }
 
         try {
-            await add_event(device_id, user_id, event_type, timestamp, details);
-        } catch (error) {
-            return reply.status(500).send({ error: `Failed to add event: ${error}` });
+            await add_event(device_credential_id, event_type, created_at, details);
+        } catch (error :any) {
+            return reply.status(500).send({ error: `Failed to add event: ${error.message}` });
         }
         return reply.send({ status: "event added" });
     });

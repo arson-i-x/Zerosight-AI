@@ -124,7 +124,13 @@ export default function DashboardPage() {
         {/* User Profile Header */}
         <div className="mb-6 p-4 bg-white rounded-lg shadow flex items-center gap-4">
           {auth.avatarUrl && (
-            <img src={auth.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover" />
+            <img
+              src={auth.avatarUrl}
+              alt="Avatar"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
+              style={{ width: 150, height: 150 }}
+              loading="lazy"
+            />
           )}
           <div>
             <h2 className="text-2xl font-semibold">{auth.fullName || 'User'}</h2>
@@ -159,7 +165,13 @@ export default function DashboardPage() {
       {/* User Profile Header */}
       <div className="mb-6 p-4 bg-white rounded-lg shadow flex items-center gap-4">
         {auth.avatarUrl && (
-          <img src={auth.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover" />
+          <img
+            src={auth.avatarUrl}
+           alt="Avatar"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
+            style={{ width: 150, height: 150 }}
+            loading="lazy"
+          />
         )}
         <div>
           <h1 className="text-2xl font-semibold">{`${auth.fullName || 'User'}'s Dashboard`}</h1>

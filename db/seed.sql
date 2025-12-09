@@ -4,7 +4,7 @@ create extension if not exists pgcrypto;
 -- Application-level profiles table (link to Supabase auth.users)
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  email text unique,
+  contact text unique not null,
   full_name text,
   avatar_url text,
   created_at timestamptz default now(),
@@ -26,16 +26,14 @@ create trigger trg_profiles_updated_at
 -- Pending profiles table for email/phone confirmation
 create table if not exists pending_profiles (
   id uuid primary key default gen_random_uuid(),
-  email text unique,
-  phone text unique,
+  contact text not null,
   full_name text,
   avatar_url text,
   created_at timestamptz default now(),
   expires_at timestamptz default now() + interval '24 hours'
 );
 
-create index if not exists idx_pending_profiles_email on pending_profiles (email);
-create index if not exists idx_pending_profiles_phone on pending_profiles (phone);
+create index if not exists idx_pending_profiles_contact on pending_profiles (contact);
 
 -- Device credentials table (pre-populated, for device authentication)
 create table if not exists device_credentials (
@@ -44,13 +42,13 @@ create table if not exists device_credentials (
   api_key text unique not null,
   user_id uuid references auth.users(id) on delete set null,
   created_at timestamptz default now(),
-  claimed_at timestamptz
+  claimed boolean default false
 );
 
 create index if not exists idx_device_credentials_api_key on device_credentials (api_key);
 create index if not exists idx_device_credentials_device_uuid on device_credentials (device_uuid);
 
--- Devices table (user-owned devices)
+-- Devices table (user-claimed devices)
 create table if not exists devices (
   id uuid primary key default gen_random_uuid(),
   device_credential_id uuid references device_credentials(id),
@@ -62,12 +60,14 @@ create table if not exists devices (
 create index if not exists idx_devices_user_id on devices (user_id);
 create index if not exists idx_devices_device_credential_id on devices (device_credential_id);
 
+ALTER TABLE devices
+  ADD CONSTRAINT devices_device_credential_id_key
+  UNIQUE (device_credential_id);
 
 -- Events table
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),
-  device_id uuid references devices(id) on delete cascade,
-  user_id uuid references auth.users(id) on delete cascade,
+  device_id uuid references devices(device_credential_id) on delete cascade,
   event_type text not null,
   details jsonb,
   created_at timestamptz default now()

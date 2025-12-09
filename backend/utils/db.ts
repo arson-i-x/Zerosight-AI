@@ -32,7 +32,7 @@ export async function get_user_devices(userId: string) {
     return data;
 }
 
-export async function add_device(userId: string, deviceId: string, deviceName: string) {
+export async function add_device(userId: string, deviceId: string, deviceName: string, credentialId: string) {
     if (!userId) {
         throw new Error("No user ID provided");
     }
@@ -42,17 +42,19 @@ export async function add_device(userId: string, deviceId: string, deviceName: s
     if (!deviceName) {
         throw new Error("No device name provided");
     }
-    const credentialData = await verify_device_exists(deviceId);
-    const credential_id = credentialData?.id;
-    console.log("Device credential ID fetched:", credentialData);
-    if (!credential_id) {
-        throw new Error("Invalid device ID");
+    if (!credentialId) {
+        throw new Error("Device credential not found for device ID");
     }
+    const { error: insertError } = await supabase
+        .from("device_credentials")
+        .update({ user_id: userId, claimed: true })
+        .eq("id", credentialId)
+    if (insertError) throw new Error("CREDENTIALS ERROR:" + insertError.message);
     const { data, error } = await supabase
         .from("devices")
-        .insert({ user_id: userId, device_credential_id: credential_id, name: deviceName })
-        .single();
-    if (error) throw error;
+        .upsert({ user_id: userId, device_credential_id: credentialId, name: deviceName })
+        .eq("id", deviceId)
+    if (error) throw new Error("UPDATE ERROR:" + error.message);
     return data;
 }
 
@@ -72,16 +74,13 @@ export async function remove_device(deviceId: string, userId: string) {
     return data;
 }
 
-export async function add_event(deviceId: string, userId: string, eventType: string, timestamp: string, details: string) {
-    if (!deviceId) {
-        throw new Error("No device ID provided");
-    }
-    if (!userId) {
-        throw new Error("No user ID provided");
+export async function add_event(device_uuid: string, eventType: string, created_at: string, details: string) {
+    if (!device_uuid) {
+        throw new Error("No device UUID provided");
     }
     const { error } = await supabase
         .from("events")
-        .insert({ device_id: deviceId, user_id: userId, event_type: eventType, timestamp, details })
+        .insert({ device_id: device_uuid, event_type: eventType, created_at: created_at, details: details })
         .single();
     if (error) throw error;
 }
@@ -101,9 +100,9 @@ export async function fetch_events(deviceId: string) {
     return data;
 }
 
-export async function add_face_encoding(userId: string, name: string, face: number[]) {
-    if (!userId) {
-        throw new Error("No user ID provided");
+export async function add_face_encoding(deviceId: string, name: string, face: number[]) {
+    if (!deviceId) {
+        throw new Error("No device ID provided");
     }
     if (!name) {
         throw new Error("No name provided");
@@ -114,7 +113,7 @@ export async function add_face_encoding(userId: string, name: string, face: numb
     console.log("Encoding data:", face);
     const { data, error } = await supabase
         .from("face_encodings")
-        .insert({ user_id: userId, 
+        .insert({ device_id: deviceId, 
                   name: name, 
                   encoding: encryptFaceEncoding(face) })
         .single();
@@ -122,19 +121,23 @@ export async function add_face_encoding(userId: string, name: string, face: numb
     return data;
 }
 
-export async function get_face_encodings(userId: string) {
-    if (!userId) {
-        throw new Error("No user ID provided");
+export async function get_face_encodings(deviceId: string) {
+    if (!deviceId) {
+        throw new Error("No device ID provided");
     }
     const { data, error } = await supabase
         .from("face_encodings")
         .select("*")
-        .eq("user_id", userId);
+        .eq("device_id", deviceId)
+        .order("created_at", { ascending: false });
     if (error) throw error;
-    data?.forEach(faceEncoding => {
-        faceEncoding.encoding = decryptFaceEncoding(faceEncoding.encoding);
-    });
-    console.log("Face encodings fetched from DB:", data);
+    try {
+        for (let encoding of data) {
+            encoding.encoding = decryptFaceEncoding(encoding.encoding);
+        }
+    } catch (err) {
+        console.log("Error decrypting face encodings:", err);
+    }
     return data;
 }
 
@@ -160,8 +163,7 @@ export async function get_user_profile(userId: string) {
         .eq("id", userId)
         .single();
     if (error) {
-        console.log("No profile found for user:", userId);
-        return { full_name: "", avatar_url: "", id: userId, email: "" };
+        throw error;
     }
     return data;
 }
@@ -212,7 +214,6 @@ export async function get_pending_profile(emailOrPhone: string) {
         console.log("No pending profile found for contact:", emailOrPhone);
         return null;
     }
-    console.log("Pending profile fetched from DB:", data);
     return data;
 }
 
@@ -223,7 +224,7 @@ export async function delete_pending_profile(emailOrPhone: string) {
     const { data, error } = await supabase
         .from("pending_profiles")
         .delete()
-        .eq("contact", emailOrPhone);
+        .eq("contact", emailOrPhone.toLowerCase());
     if (error) throw error;
     return data;
 }
@@ -242,12 +243,12 @@ export async function verify_device_action(deviceId: string, userId: string) {
         .eq("user_id", userId)
         .single();
     if (error) {
-        return { data: null, error };
+        throw error;
     } 
     return data;
 }
 
-export async function verify_device_exists(deviceId: string) {
+export async function get_device_credential_from_UUID(deviceId: string) {
     if (!deviceId) {
         throw new Error("No device ID provided");
     }
@@ -265,7 +266,7 @@ export async function verify_device_exists(deviceId: string) {
     return data;
 }
 
-export async function verify_device_key(apiKey: string) {
+export async function get_device_credential_from_api_key(apiKey: string) {
     if (!apiKey) {
         throw new Error("No API key provided");
     }
@@ -273,12 +274,52 @@ export async function verify_device_key(apiKey: string) {
         .from("device_credentials")
         .select("*")
         .eq("api_key", apiKey)
-        .maybeSingle();
+        .single();
     if (error) {
         throw error;
     } 
     if (!data) {
         throw new Error("Device key does not exist");
     }
+    return data;
+}
+
+export async function create_device_credential(deviceId: string, apiKey: string) {
+    if (!deviceId) {
+        throw new Error("No device ID provided");
+    }
+    if (!apiKey) {
+        throw new Error("No API key provided");
+    }
+    const { data, error } = await supabase
+        .from("device_credentials")
+        .insert({ device_uuid: deviceId, api_key: apiKey })
+        .single();
+    if (error) throw error;
+    return data;
+}
+
+export async function delete_device_credential(deviceId: string) {
+    if (!deviceId) {
+        throw new Error("No device ID provided");
+    }
+    const { data, error } = await supabase
+        .from("device_credentials")
+        .delete()
+        .eq("device_uuid", deviceId);
+    if (error) throw error;
+    return data;
+}
+
+export async function get_device_credential_from_id(deviceId: string) {
+    if (!deviceId) {
+        throw new Error("No device ID provided");
+    }
+    const { data, error } = await supabase
+        .from("device_credentials")
+        .select("*")
+        .eq("id", deviceId)
+        .single();
+    if (error) throw error;
     return data;
 }

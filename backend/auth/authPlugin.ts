@@ -61,9 +61,22 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
     });
 
     // Fetch user profile
-    const profile = await get_user_profile(userId);
-
-    return { access_token: accessToken, user_id: userId, full_name: profile?.full_name || '', avatar_url: profile?.avatar_url || '' };
+    try {
+      const profile = await get_user_profile(userId);
+      console.log("User profile on login:", profile);
+      return reply.send({ access_token: accessToken, user_id: userId, full_name: profile.full_name, avatar_url: profile.avatar_url});
+    } catch (e) {
+      fastify.log.warn(`No profile found for user ${userId} on login`);
+      // get user profile failed, get pending profile if exists
+      fastify.log.info(`Checking for pending profile for user ${userId} on login`);
+      const pending = await get_pending_profile(email);
+      if (pending) {
+        fastify.log.info(`Applying pending profile for user ${userId} on login`);
+        // Upsert profile
+        await upsert_user_profile(email, userId, pending.full_name, pending.avatar_url || undefined);
+        await delete_pending_profile(email);
+      }
+    }
   });
 
   fastify.post("/signup", async (request, reply) => {

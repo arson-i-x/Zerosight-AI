@@ -13,6 +13,7 @@ export default function AddDevicePage() {
   const [deviceName, setDeviceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const auth = useAuth();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,7 +32,7 @@ export default function AddDevicePage() {
       const res = await apiFetch(`${DEVICES_API_URL}/add_device`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ device_id: deviceId, device_name: deviceName }),
+        body: JSON.stringify({ user_id: auth.userId, device_id: deviceId, device_name: deviceName }),
       });
 
       if (!res.ok) {

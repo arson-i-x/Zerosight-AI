@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { useAuth } from "../providers/AuthProvider";
 
 export default function LoginPage() {
@@ -16,7 +16,6 @@ export default function LoginPage() {
       setError("Login failed");
       return;
     }
-    // Move to dashboard
     window.location.href = "/dashboard";
   }
 

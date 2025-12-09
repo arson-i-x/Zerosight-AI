@@ -23,57 +23,6 @@ def prepare_frame(frame):
     rgb = np.ascontiguousarray(rgb, dtype=np.uint8)
     return rgb
 
-def anomalyDetected(frame, faces):
-    known_faces = faces if faces is not None else []
-
-    # Downsample for faster processing
-    DOWNSCALE = 0.25  # 0.5 = half size, adjust as needed
-    small_frame = cv2.resize(frame, (0, 0), fx=DOWNSCALE, fy=DOWNSCALE)
-    rgb_small = prepare_frame(small_frame)
-
-    locations = face_recognition.face_locations(rgb_small)
-    if not locations or len(locations) == 0:
-        return False
-
-    try:
-        encodings = face_recognition.face_encodings(rgb_small, locations)
-        if not encodings or len(encodings) != len(locations):
-            print(f"Warning: Got {len(encodings)} encodings for {len(locations)} locations, skipping frame.")
-            return False
-    except Exception as e:
-        print(f"Error in face encoding: {e}")
-        print(f"Locations: {locations}")
-        print(f"Frame dtype: {rgb_small.dtype}, shape: {rgb_small.shape}")
-        return False
-
-    anomaly = False
-
-    # Scale locations back to original frame size
-    for (top, right, bottom, left), enc in zip(locations, encodings):
-        top = int(top / DOWNSCALE)
-        right = int(right / DOWNSCALE)
-        bottom = int(bottom / DOWNSCALE)
-        left = int(left / DOWNSCALE)
-
-        distances = [np.linalg.norm(enc - k["encoding"]) for k in known_faces]
-        if len(distances) > 0:
-            idx = np.argmin(distances)
-            best_distance = distances[idx]
-        else:
-            best_distance = 999
-
-        if best_distance < 0.75:
-            name = known_faces[idx]["name"]
-        else:
-            name = "Unknown"
-            anomaly = True
-
-        cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-        cv2.putText(frame, name, (left, top - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
-    return anomaly
-
 class VideoRecognizer:
     """Recognizes video input from a camera device."""
 
@@ -103,10 +52,10 @@ class VideoRecognizer:
                 break
             frame_count += 1
             # Face recognition and anomaly detection
-            if (frame_count % DETECT_EVERY_N_FRAMES == 0 and anomalyDetected(frame, self.faces)):  # Replace with actual detection logic
+            if (frame_count % DETECT_EVERY_N_FRAMES == 0 and self.anomalyDetected(frame)):  # Replace with actual detection logic
                 detection = {
                     "type": "video",
-                    "timestamp": time.time(),
+                    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "details": "Unknown face detected in video frame.",
                     "frame": frame  # You can process or save the frame as needed
                 }
@@ -120,6 +69,56 @@ class VideoRecognizer:
 
         cap.release()
         cv2.destroyAllWindows()
+
+    def anomalyDetected(self, frame):
+        # Downsample for faster processing
+        DOWNSCALE = 0.25  # 0.5 = half size, adjust as needed
+        small_frame = cv2.resize(frame, (0, 0), fx=DOWNSCALE, fy=DOWNSCALE)
+        rgb_small = prepare_frame(small_frame)
+
+        locations = face_recognition.face_locations(rgb_small)
+        if not locations or len(locations) == 0:
+            return False
+
+        try:
+            encodings = face_recognition.face_encodings(rgb_small, locations)
+            if not encodings or len(encodings) != len(locations):
+                print(f"Warning: Got {len(encodings)} encodings for {len(locations)} locations, skipping frame.")
+                return False
+        except Exception as e:
+            print(f"Error in face encoding: {e}")
+            print(f"Locations: {locations}")
+            print(f"Frame dtype: {rgb_small.dtype}, shape: {rgb_small.shape}")
+            return False
+
+        anomaly = False
+
+        # Scale locations back to original frame size
+        for (top, right, bottom, left), enc in zip(locations, encodings):
+            top = int(top / DOWNSCALE)
+            right = int(right / DOWNSCALE)
+            bottom = int(bottom / DOWNSCALE)
+            left = int(left / DOWNSCALE)
+
+            distances = [np.linalg.norm(enc - k["encoding"]) for k in self.faces]
+            if len(distances) > 0:
+                idx = np.argmin(distances)
+                best_distance = distances[idx]
+            else:
+                best_distance = 999
+
+            if best_distance < 0.75:
+                name = self.faces[idx]["name"]
+            else:
+                name = "Unknown"
+                anomaly = True
+
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+            cv2.putText(frame, name, (left, top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+        return anomaly
+
 
 def _build_arg_parser():
     parser = argparse.ArgumentParser(description="Listen for sound events from a microphone input.")

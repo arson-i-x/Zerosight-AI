@@ -1,5 +1,5 @@
 // Device plugin
-import { get_user_devices, add_device, remove_device } from "../utils/db.ts";
+import { get_user_devices, add_device, remove_device, get_device_credential_from_UUID } from "../utils/db.ts";
 import { verify_exists, verify_action, verify_jwt } from "../auth/auth.ts";
 import { verify } from "crypto";
 
@@ -20,29 +20,36 @@ const devices_plugin = async (fastify: any, opts: any) => {
     });
 
     // Add a new device for a user
-    fastify.post("/devices/add_device", { preHandler: verify_action }, async (request: any, reply: any) => {
+    fastify.post("/devices/add_device", { preHandler: verify_exists }, async (request: any, reply: any) => {
         try {
-            const userId = (request as any).user?.id ?? null;
-            let deviceId = (request as any).device?.id ?? null; 
+            // try to get userId from JWT
+            const userId = (request as any).body.user_id || null;
+
             const deviceName = (request as any).body.device_name;
-            if (!deviceId) {
-                deviceId = (request as any).body.device_id;
+
+            if (!deviceName || deviceName.trim() === "" || deviceName.length > 100 ) {
+                return reply.status(400).send({ error: "Invalid device name" });
             }
-            if (!deviceName || !deviceId) {
-                return reply.status(400).send({ error: "Missing deviceId or deviceName" });
+
+            let deviceId = (request as any).device_id;
+
+            const device_credential_id = (request as any).device_credentials?.id;
+
+            if (!deviceName || !deviceId || !device_credential_id) {
+                return reply.status(400).send({ error: "Missing deviceId, deviceName, or device_credential_id" });
             }
-            console.log("Adding device:", deviceId, "for user:", userId);
             if (!userId) {
                 return reply.status(400).send({ error: "No user information" });
             }
             try {
-                await add_device(userId, deviceId, deviceName);
+                await add_device(userId, deviceId, deviceName, device_credential_id);
             } catch (e: any) {
                 return reply.status(500).send({ error: "Failed to add device: " + e.message });
             }
-            
-            return reply.status(200).send({ status: "device added " });
+            fastify.log.info(`Device ${deviceId} added for user ${userId}`);
+            return reply.status(200).send({ status: " device added " });
         } catch (error) {
+            fastify.log.error({ err: error }, "Add device error");
             return reply.status(500).send({ error: "Failed to add device " + error });
         }
     });
@@ -51,31 +58,36 @@ const devices_plugin = async (fastify: any, opts: any) => {
     fastify.delete("/devices/remove_device", { preHandler: verify_action }, async (request: any, reply: any) => {
         try {
             const userId = (request as any).user.id;
-            const { deviceId } = (request as any).device.id;
+            const deviceId = (request as any).device_id;
             const result = await remove_device(deviceId, userId);
             return reply.send({ result });
         } catch (error) {
+            fastify.log.error({ err: error }, "Remove device error");
             return reply.status(500).send({ error: "Failed to remove device" });
         }
     });
 
     fastify.post("/devices/register", { preHandler: verify_exists }, async (request: any, reply: any) => {
-        const device  = (request as any).device;
-        const device_id = device?.id ?? null;
-        
+        const device_id = (request as any).device_id ?? null;
+        console.log("Registering device ID:", device_id);
         if (!device_id) {
             fastify.log.error({ err: "Missing device_id" }, "Device registration error");
             return reply.status(400).send({ error: "device_id required" });
         }
         // Device is valid and registered
-        return reply.send({ ok: true, device_id: device.id });
+        return reply.send({ ok: true, device_id: device_id });
     });
 
     fastify.get("/devices/info", { preHandler: verify_exists }, async (request: any, reply: any) => {
         try {
-            const deviceData = (request as any).device;
-            return reply.send({ device: deviceData });
+            const device_id = (request as any).device_id ?? null;
+            const deviceInfo = await get_device_credential_from_UUID(device_id);
+            if (!deviceInfo) {
+                return reply.status(404).send({ error: "Device not found" });
+            }
+            return reply.send({ device: deviceInfo });
         } catch (error) {
+            fastify.log.error({ err: error }, "Get device info error");
             return reply.status(500).send({ error: "Failed to get device info" });
         }
     });

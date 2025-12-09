@@ -35,16 +35,24 @@ def poll_for_user_assignment(api_key, max_wait_sec=300):
         try:
             res = requests.get(
                 f"{BACKEND_URL}devices/info",
-                headers={"X-Device-Key": api_key},
+                headers={"x-device-key": api_key},
                 timeout=10
             )
             
             if res.status_code == 200:
                 data = res.json()
-                if data.get("user_id"):
-                    print(f"✓ Device claimed! User ID: {data['user_id']}")
-                    return data
-                print(f"  Still waiting... (claimed: {data.get('claimed', False)})")
+                print(data)
+                raw = res.json()
+                device_obj = raw.get("device") if isinstance(raw, dict) else None
+                user_id = (raw.get("user_id") if isinstance(raw, dict) else None) or (device_obj or {}).get("user_id")
+                device_id = (raw.get("device_id") if isinstance(raw, dict) else None) or (device_obj or {}).get("id") or (device_obj or {}).get("device_uuid")
+                claimed = (raw.get("claimed") if isinstance(raw, dict) else None) or (device_obj or {}).get("claimed", False)
+
+                if user_id and device_id:
+                    print(f"✓ Device claimed! User ID: {user_id}, Device ID: {device_id}")
+                    return {"user_id": user_id, "device_id": device_id}
+                else:
+                    print(f"  Still waiting... (claimed: {claimed})")
             else:
                 print(f"Poll failed: {res.status_code}")
         except Exception as e:
@@ -64,6 +72,7 @@ def _build_parser():
     parser.add_argument("--energy-threshold", type=float, default=200.0, help="Energy threshold passed to the recognizer to filter noise.")
     parser.add_argument("--delta-threshold", type=float, default=120.0, help="Minimum energy above the noise floor to trigger an event.")
     parser.add_argument("--silence-frames", type=int, default=4, help="Number of quiet frames required before allowing another trigger.")
+    parser.add_argument("--new-face", action="store_true", help="Capture a new face encoding for this device.", default=False)
     return parser
 
 def main():
@@ -88,7 +97,7 @@ def main():
 
     print(f"Device UUID: {device_uuid}")
     print(f"Tell user to enter this UUID on frontend to claim device.")
-    
+
     # Register with backend
     try:
         res = requests.post(
@@ -121,20 +130,21 @@ def main():
         device_id=device_id,
         user_id=user_id,
         api_key=api_key,  # device uses API key, not user token
-        user_token=None,
         cooldown=args.cooldown,
         video_device_index=args.video_device_index,
         audio_device_index=args.audio_device_index
     )
 
-    user_name = input("Enter your name: ")
-
-    try:
-        known_faces = sender.addNewFace(name=user_name)
-        print("New face encoding sent to backend.")
-    except Exception as e:
-        print(f"Failed to send face encoding: {e}")
-        return
+    # If new face, capture it now
+    if args.new_face:
+        user_name = input("Enter your name: ")
+        try:
+            known_faces = sender.addNewFace(name=user_name)
+        except Exception as e:
+            print(f"Failed to add new encoding: {e}")
+            return
+    else:
+        known_faces = sender.getFaces()
 
     soundSensor = SoundRecognizer(
         device_index=args.audio_device_index or 0,

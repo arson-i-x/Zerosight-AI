@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
+        console.log("Attempting login for email:", email);
       const res = await fetch(`${BACKEND}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
