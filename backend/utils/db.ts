@@ -1,7 +1,7 @@
 // db.ts
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import 'dotenv/config';
-import { encryptFaceEncoding, decryptFaceEncoding } from "./crypto.ts";
+import { encryptFaceEncoding, decryptFaceEncoding, hashDeviceKey } from "./crypto.ts";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -291,9 +291,14 @@ export async function create_device_credential(deviceId: string, apiKey: string)
     if (!apiKey) {
         throw new Error("No API key provided");
     }
+   const hash = await hashDeviceKey(apiKey);
+
     const { data, error } = await supabase
         .from("device_credentials")
-        .insert({ device_uuid: deviceId, api_key: apiKey })
+        .insert({
+            device_uuid: deviceId,
+            api_key_hash: hash
+        })
         .single();
     if (error) throw error;
     return data;

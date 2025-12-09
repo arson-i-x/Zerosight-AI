@@ -7,6 +7,8 @@ import requests
 import threading
 import json
 import pyaudio
+import hashlib
+import hmac
 
 from event_sender import EventSender
 from sound_recognizer import SoundRecognizer, list_input_devices
@@ -26,28 +28,21 @@ def load_device_credentials():
     with open(DEVICE_CONFIG, "r") as f:
         return json.load(f)
 
-def poll_for_user_assignment(api_key, max_wait_sec=300):
+def poll_for_user_assignment(api_key, max_wait_sec=300, sender: EventSender =None, device_uuid=None):
     """Poll backend until device is claimed by a user (max 5 min)."""
     start = time.time()
     print("Waiting for device to be claimed by a user on frontend...")
     
     while time.time() - start < max_wait_sec:
         try:
-            res = requests.get(
-                f"{BACKEND_URL}devices/info",
-                headers={"x-device-key": api_key},
-                timeout=10
-            )
+            res = sender.send_request(url="devices/info", event={}, device_id=device_uuid, device_secret=api_key, request_method="GET")
             
             if res.status_code == 200:
-                data = res.json()
-                print(data)
-                raw = res.json()
-                device_obj = raw.get("device") if isinstance(raw, dict) else None
-                user_id = (raw.get("user_id") if isinstance(raw, dict) else None) or (device_obj or {}).get("user_id")
-                device_id = (raw.get("device_id") if isinstance(raw, dict) else None) or (device_obj or {}).get("id") or (device_obj or {}).get("device_uuid")
-                claimed = (raw.get("claimed") if isinstance(raw, dict) else None) or (device_obj or {}).get("claimed", False)
-
+                credentials: dict = res.json().get("deviceCredential", {})
+                user_id = credentials.get("user_id")
+                device_id = credentials.get("device_uuid")
+                claimed = credentials.get("claimed")
+                print(f"Polled device info: user_id={user_id}, device_id={device_id}, claimed={claimed}")
                 if user_id and device_id:
                     print(f"✓ Device claimed! User ID: {user_id}, Device ID: {device_id}")
                     return {"user_id": user_id, "device_id": device_id}
@@ -98,14 +93,23 @@ def main():
     print(f"Device UUID: {device_uuid}")
     print(f"Tell user to enter this UUID on frontend to claim device.")
 
+    # Now create EventSender with device info (no user token needed)
+    sender = EventSender(
+        device_id=device_uuid,
+        api_key=api_key,  # device uses API key, not user token
+        cooldown=args.cooldown,
+        video_device_index=args.video_device_index,
+        audio_device_index=args.audio_device_index
+    )
+
     # Register with backend
     try:
-        res = requests.post(
-            f"{BACKEND_URL}devices/register",
-            json={"device_uuid": device_uuid},
-            headers={"x-device-key": api_key},
-            timeout=10
-        )
+        res = sender.send_request(url="devices/register", 
+                                  event={}, 
+                                  device_id=device_uuid, 
+                                  device_secret=api_key, 
+                                  request_method="POST", 
+                                  )
         if res.status_code in [200, 409]:
             print("✓ Device registered with backend")
         else:
@@ -116,7 +120,7 @@ def main():
         return
     
     # Poll until user claims device
-    device_info = poll_for_user_assignment(api_key)
+    device_info = poll_for_user_assignment(api_key, sender=sender, device_uuid=device_uuid)
     user_id = device_info["user_id"]
     device_id = device_info["device_id"]
 
@@ -124,16 +128,6 @@ def main():
     print(f"  Device ID: {device_id}")
     print(f"  User ID: {user_id}")
     print(f"  Starting event listeners...\n")
-
-    # Now create EventSender with device info (no user token needed)
-    sender = EventSender(
-        device_id=device_id,
-        user_id=user_id,
-        api_key=api_key,  # device uses API key, not user token
-        cooldown=args.cooldown,
-        video_device_index=args.video_device_index,
-        audio_device_index=args.audio_device_index
-    )
 
     # If new face, capture it now
     if args.new_face:

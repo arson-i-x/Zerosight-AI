@@ -26,7 +26,7 @@ await app.register(fastifyCors, {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Device-Key"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-device-id", "x-ts", "x-signature"],
 });
 
 // cookies (for refresh token)

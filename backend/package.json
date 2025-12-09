@@ -26,6 +26,7 @@
     "@fastify/helmet": "^13.0.2",
     "@fastify/rate-limit": "^10.3.0",
     "@supabase/supabase-js": "^2.86.2",
+    "argon2": "^0.44.0",
     "dotenv": "^17.2.3",
     "fastify": "^5.6.2",
     "fastify-jwt": "^4.1.3",

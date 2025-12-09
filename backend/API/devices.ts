@@ -1,7 +1,6 @@
 // Device plugin
 import { get_user_devices, add_device, remove_device, get_device_credential_from_UUID } from "../utils/db.ts";
 import { verify_exists, verify_action, verify_jwt } from "../auth/auth.ts";
-import { verify } from "crypto";
 
 const devices_plugin = async (fastify: any, opts: any) => {
     // Get all devices for a user
@@ -68,26 +67,13 @@ const devices_plugin = async (fastify: any, opts: any) => {
     });
 
     fastify.post("/devices/register", { preHandler: verify_exists }, async (request: any, reply: any) => {
-        const device_id = (request as any).device_id ?? null;
-        console.log("Registering device ID:", device_id);
-        if (!device_id) {
-            fastify.log.error({ err: "Missing device_id" }, "Device registration error");
-            return reply.status(400).send({ error: "device_id required" });
-        }
-        // Device is valid and registered
-        return reply.send({ ok: true, device_id: device_id });
+        return reply.send({ ok: true, device_id: (request as any).device_id });
     });
 
     fastify.get("/devices/info", { preHandler: verify_exists }, async (request: any, reply: any) => {
         try {
-            const device_id = (request as any).device_id ?? null;
-            const deviceInfo = await get_device_credential_from_UUID(device_id);
-            if (!deviceInfo) {
-                return reply.status(404).send({ error: "Device not found" });
-            }
-            return reply.send({ device: deviceInfo });
+            return reply.send({ deviceCredential: (request as any).device_credentials });
         } catch (error) {
-            fastify.log.error({ err: error }, "Get device info error");
             return reply.status(500).send({ error: "Failed to get device info" });
         }
     });

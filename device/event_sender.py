@@ -6,6 +6,9 @@ import requests
 import face_recognition
 import time
 import numpy as np
+import json
+import hashlib
+import hmac
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000/API/")
 EVENT_COOLDOWN_SEC = float(os.environ.get("EVENT_COOLDOWN_SEC", "1.0"))
@@ -25,16 +28,48 @@ def prepare_frame(frame):
 class EventSender:
     """Throttles detection events and forwards them to the backend using device API key."""
 
-    def __init__(self, device_id, user_id, api_key, video_device_index=None, audio_device_index=None, cooldown=EVENT_COOLDOWN_SEC):
+    def __init__(self, device_id, api_key, video_device_index=None, audio_device_index=None, cooldown=EVENT_COOLDOWN_SEC):
         self.backend_url = BACKEND_URL
         self.device_id = device_id
-        self.user_id = user_id
         self.api_key = api_key
-        self.headers = {"x-device-key": api_key}
         self.cooldown = max(cooldown, 0.2)
         self._last_sent = 0.0
         self.video_device_index = video_device_index
         self.audio_device_index = audio_device_index
+
+    def sign_request(self, method, body, ts, secret):
+        body_bytes = body.encode("utf-8") if isinstance(body, str) else body
+        body_hash = hashlib.sha256(body_bytes).hexdigest()
+        msg = f"{method}\n{ts}\n{body_hash}".encode()
+        sig = hmac.new(key=secret.encode("utf-8"), msg=msg, digestmod=hashlib.sha256).hexdigest()
+        return sig
+
+    def send_request(self, url, event, device_id, device_secret, request_method="POST"):
+        url = BACKEND_URL + url
+        body = json.dumps(event).encode()
+        ts = str(int(time.time()))
+        sig = self.sign_request(request_method, body, ts, device_secret)
+        headers = {
+            "Content-Type": "application/json",
+            "Connection": "close",
+            "x-device-id": device_id,
+            "x-ts": ts,
+            "x-signature": sig,
+        }
+        with requests.Session() as s:
+            s.headers.update(headers)
+        if request_method == "GET":
+            r = s.get(url, headers=headers, timeout=10, stream=False)
+        elif request_method == "POST":
+            r = s.post(url, headers=headers, data=body, timeout=10, stream=False)
+        elif request_method == "DELETE":
+            r = s.delete(url, headers=headers, timeout=10, stream=False)
+        elif request_method == "PUT":
+            r = s.put(url, headers=headers, data=body, timeout=10, stream=False)
+        else:
+            raise ValueError(f"Unsupported request method: {request_method}")
+        # print(f"Sent {request_method} request to {url}, status code: {r.status_code}. Response: {r.text}")
+        return r
 
     def sendAudioEvent(self, detection):
         now = time.time()
@@ -55,11 +90,12 @@ class EventSender:
         }
 
         try:
-            response = requests.post(
-                self.backend_url + "events/add_event",
-                json=payload,
-                headers=self.headers,
-                timeout=10
+            response = self.send_request(
+                url="events/add_event",
+                event=payload,
+                device_id=self.device_id,
+                device_secret=self.api_key,
+                request_method="POST"
             )
         except requests.RequestException as exc:
             raise Exception(f"Failed to send event: {exc}")
@@ -85,11 +121,12 @@ class EventSender:
         }
 
         try:
-            response = requests.post(
-                self.backend_url + "events/add_event",
-                json=payload,
-                headers=self.headers,
-                timeout=10
+            response = self.send_request(
+                url="events/add_event",
+                event=payload,
+                device_id=self.device_id,
+                device_secret=self.api_key,
+                request_method="POST"
             )
         except requests.RequestException as exc:
             raise Exception(f"Failed to send event: {exc}")
@@ -153,7 +190,13 @@ class EventSender:
         }
         try:
             print("Sending new face to backend...")
-            response = requests.post(self.backend_url + "faces/add_face_encoding", json=payload, headers=self.headers, timeout=10)
+            response = self.send_request(
+                url="faces/add_face_encoding",
+                event=payload,
+                device_id=self.device_id,
+                device_secret=self.api_key,
+                request_method="POST"
+            )
         except requests.RequestException as exc:
             raise Exception(f"Failed to send event: {exc}")
 
@@ -167,7 +210,13 @@ class EventSender:
     def getFaces(self):
         try:
             print("Fetching known faces from backend...")
-            response = requests.get(self.backend_url + "faces/get_face_encodings", headers=self.headers, timeout=10)
+            response = self.send_request(
+                url="faces/get_face_encodings",
+                event={},
+                device_id=self.device_id,
+                device_secret=self.api_key,
+                request_method="GET"
+            )
         except requests.RequestException as exc:
             raise Exception(f"Failed to get face encodings: {exc}")
 
@@ -177,7 +226,13 @@ class EventSender:
     
     def clearFaces(self):
         try:
-            response = requests.delete(self.backend_url + "faces/clear_face_encodings", headers=self.headers, timeout=10)
+            response = self.send_request(
+                url="faces/clear_face_encodings",
+                event={},
+                device_id=self.device_id,  
+                device_secret=self.api_key,
+                request_method="DELETE"
+            )
         except requests.RequestException as exc:
             raise Exception(f"Failed to clear face encodings: {exc}")
 
