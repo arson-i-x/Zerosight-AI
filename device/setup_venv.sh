@@ -191,50 +191,25 @@ echo "Provisioning server: http://192.168.4.1/"
 PYTHON=$(which python3.10 || which python3)
 
 ###################################
-# Python 3.13 venv setup
+# Python 3.10 venv setup
 ###################################
 
-PYTHON="/usr/bin/python3.13"
+echo "=== Setting up Python 3.10 virtual environment ==="
 
-if [ ! -x "$PYTHON" ]; then
-    echo "ERROR: Python 3.13 not found!"
-    exit 1
-fi
+# Python 3.10 may be installed as python3.10 or python3
+PYTHON=$(which python3.10 || which python3)
 
 echo "Using Python: $PYTHON"
 
-echo "Creating venv at venv..."
-rm -rf venv
-$PYTHON -m venv venv
-source venv/bin/activate
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: python3.10 not found!"
+    echo "Install with:"
+    echo "  sudo apt install python3.10 python3.10-venv python3.10-dev"
+    exit 1
+fi
 
-echo "Upgrading pip inside venv..."
-pip install --upgrade pip wheel setuptools
-
-sudo apt update
-sudo apt install -y \
-    build-essential \
-    cmake \
-    python3.13-dev \
-    python3.13-venv \
-    libopenblas-dev \
-    liblapack-dev \
-    libx11-dev \
-    libhdf5-dev \
-    libjpeg-dev \
-    libpng-dev \
-    libboost-all-dev \
-    git \
-    portaudio19-dev \
-    libportaudio2 \
-    libportaudiocpp0 \
-    ffmpeg \
-    libsndfile1-dev
-
-source venv/bin/activate
-
-# Upgrade pip inside venv
-pip install --upgrade pip
+echo "Creating venv..."
+py -3.10 -m venv venv
 
 echo "Activating venv..."
 source venv/bin/activate
@@ -242,34 +217,16 @@ source venv/bin/activate
 echo "Upgrading pip..."
 pip install --upgrade pip
 
-# For dlib
-sudo apt update
-sudo apt install -y build-essential cmake python3-dev
-
-# For PyAudio
-sudo apt install -y portaudio19-dev libportaudio2 libportaudiocpp0 ffmpeg
-
-# Optional (helps with audio processing, e.g., librosa)
-sudo apt install -y libsndfile1-dev
-
 echo "Installing dependencies..."
-
-echo "Installing Python deps..."
-
-pip install --upgrade pip wheel setuptools
-
-# Build dlib manually for Python 3.13
-pip install dlib
-
-pip install face_recognition
-pip install git+https://github.com/ageitgey/face_recognition_models
-pip install numpy opencv-python librosa pyaudio requests
-pip install git+https://github.com/ageitgey/face_recognition_models
-python - <<'EOF'
-import face_recognition, dlib
-print("face_recognition OK")
-print("dlib:", dlib.__version__)
-EOF
+pip install \
+    cmake \
+    face_recognition \
+    dlib \
+    opencv-python \
+    numpy \
+    librosa \
+    pyaudio \
+    requests
 
 echo
 echo "=== Virtual environment ready! ==="
