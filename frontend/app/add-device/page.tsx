@@ -29,8 +29,8 @@ export default function AddDevicePage() {
     setLoading(true);
     try {
       const device = await claimDevice(deviceId);
+      router.push("/provisioning")
       console.log("Device claimed:", device);
-      router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || String(err));
     } finally {
@@ -130,6 +130,7 @@ export default function AddDevicePage() {
             Cancel
           </button>
         </div>
+
       </form>
     </div>
   );

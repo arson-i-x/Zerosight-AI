@@ -182,6 +182,16 @@ source venv/bin/activate
 echo "Upgrading pip..."
 pip install --upgrade pip
 
+# For dlib
+sudo apt update
+sudo apt install -y build-essential cmake python3-dev
+
+# For PyAudio
+sudo apt install -y portaudio19-dev libportaudio2 libportaudiocpp0 ffmpeg
+
+# Optional (helps with audio processing, e.g., librosa)
+sudo apt install -y libsndfile1-dev
+
 echo "Installing dependencies..."
 pip install \
     cmake \
