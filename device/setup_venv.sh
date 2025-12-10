@@ -1,32 +1,14 @@
 #!/bin/bash
 set -e
 
-echo "Updating packages..."
-apt update && apt install -y hostapd dnsmasq python3 python3-pip
-
-echo "Installing FastAPI + Uvicorn provisioning server..."
-apt install -y python3-venv
-
-echo "Creating provisioning venv..."
-python3 -m venv /opt/provision/venv
-
-echo "Installing FastAPI + Uvicorn in venv..."
-/opt/provision/venv/bin/pip install fastapi uvicorn
-
-
-echo "Stopping services so we can configure..."
-systemctl stop hostapd || true
-systemctl stop dnsmasq || true
-
-echo "Backing up original configs..."
-[ -f /etc/dnsmasq.conf ] && mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
-[ -f /etc/hostapd/hostapd.conf ] && mv /etc/hostapd/hostapd.conf /etc/hostapd.conf.orig
+echo "=== Updating packages ==="
+apt update
+apt install -y hostapd dnsmasq python3 python3-pip python3-venv build-essential cmake python3-dev portaudio19-dev libportaudio2 libportaudiocpp0 ffmpeg libsndfile1-dev
 
 ###################################
 # Create AP configs
 ###################################
-
-echo "Creating /etc/hostapd/hostapd.conf..."
+echo "=== Configuring hostapd ==="
 cat >/etc/hostapd/hostapd.conf <<EOF
 interface=wlan0
 driver=nl80211
@@ -40,19 +22,16 @@ wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 EOF
 
-echo "DAEMON_CONF=\"/etc/hostapd/hostapid.conf\"" >/etc/default/hostapd
+echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >/etc/default/hostapd
 
-echo "Creating dnsmasq AP config..."
+echo "=== Configuring dnsmasq ==="
+[ -f /etc/dnsmasq.conf ] && mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
 cat >/etc/dnsmasq.conf <<EOF
 interface=wlan0
 dhcp-range=192.168.4.10,192.168.4.100,12h
-address=/#/192.168.4.1
 EOF
 
-###################################
-# Configure AP static IP
-###################################
-echo "Configuring static IP for AP mode..."
+echo "=== Configuring static IP for wlan0 ==="
 cat >>/etc/dhcpcd.conf <<EOF
 
 interface wlan0
@@ -60,10 +39,12 @@ interface wlan0
 EOF
 
 ###################################
-# Provisioning Server
+# Provisioning server
 ###################################
-
 mkdir -p /opt/provision
+python3 -m venv /opt/provision/venv
+/opt/provision/venv/bin/pip install --upgrade pip fastapi uvicorn
+
 cat >/opt/provision/server.py <<'EOF'
 from fastapi import FastAPI
 import subprocess
@@ -77,7 +58,6 @@ async def provision(data: dict):
 
     # Build hashed PSK output
     psk = subprocess.check_output(["wpa_passphrase", ssid, pw]).decode()
-
     with open("/etc/wpa_supplicant/wpa_supplicant.conf", "w") as f:
         f.write(psk)
 
@@ -91,9 +71,8 @@ async def provision(data: dict):
 EOF
 
 ###################################
-# systemd: provisioning server
+# Systemd: provisioning server
 ###################################
-
 cat >/etc/systemd/system/provision.service <<EOF
 [Unit]
 Description=Zerosight Provisioning Server
@@ -109,13 +88,16 @@ WantedBy=multi-user.target
 EOF
 
 ###################################
-# systemd: AP fallback
+# AP fallback script
 ###################################
-
 cat >/opt/provision/check_wifi.sh <<'EOF'
 #!/bin/bash
-
-SSID=$(wpa_cli -i wlan0 status | grep ssid= | cut -d= -f2)
+# Wait for wlan0 to be ready
+for i in {1..5}; do
+    SSID=$(wpa_cli -i wlan0 status | grep ssid= | cut -d= -f2)
+    if [ ! -z "$SSID" ]; then break; fi
+    sleep 2
+done
 
 if [ -z "$SSID" ]; then
     echo "No WiFi configured, enabling AP mode..."
@@ -123,17 +105,21 @@ if [ -z "$SSID" ]; then
     systemctl start hostapd
     systemctl restart provision
 else
-    echo "WiFi is configured, disabling AP mode."
+    echo "WiFi is configured, disabling AP mode..."
     systemctl stop dnsmasq
     systemctl stop hostapd
 fi
 EOF
 chmod +x /opt/provision/check_wifi.sh
 
+###################################
+# Systemd: AP fallback service
+###################################
 cat >/etc/systemd/system/ap-fallback.service <<EOF
 [Unit]
 Description=Enable AP mode if WiFi is unconfigured
-After=multi-user.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
@@ -146,20 +132,17 @@ EOF
 ###################################
 # Enable services
 ###################################
-
-systemctl enable ap-fallback.service
+systemctl daemon-reload
 systemctl enable provision.service
+systemctl enable ap-fallback.service
 
 echo ""
 echo "-------------------------------------"
-echo " Provisioning setup complete!"
-echo " AP SSID: zerosight-setup"
-echo " Password: zerosight123"
-echo " Server: http://192.168.4.1/"
+echo "Provisioning setup complete!"
+echo "AP SSID: zerosight-setup"
+echo "Password: zerosight123"
+echo "Provisioning server: http://192.168.4.1/"
 echo "-------------------------------------"
-
-#!/bin/bash
-echo "=== Setting up Python 3.10 virtual environment ==="
 
 # Python 3.10 may be installed as python3.10 or python3
 PYTHON=$(which python3.10 || which python3)
