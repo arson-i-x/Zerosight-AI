@@ -13,6 +13,7 @@ const devices_plugin = async (fastify: any, opts: any) => {
         
         try {
             const devices = await get_user_devices(userId);
+            console.log("Devices fetched for user:", devices);
             return reply.send({ devices });
         } catch (error) {
             return reply.status(500).send({ error: "Failed to fetch devices" });

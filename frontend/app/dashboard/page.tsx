@@ -53,6 +53,7 @@ export default function DashboardPage() {
   async function fetchUserDevices() {
     if (!ensureAuth()) return;
     try {
+      console.log("Fetching user devices");
       const res = await auth.apiFetch(`${DEVICES_API_URL}user_devices`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
@@ -61,6 +62,7 @@ export default function DashboardPage() {
       if (!res.ok) {
         throw new Error(data?.error || `Request failed: ${res.status}`);
       }
+      console.log("User devices data:", data);
       return data;
     } catch (error) {
       console.error("Error fetching user devices:", error);
@@ -72,9 +74,8 @@ export default function DashboardPage() {
     const data = await fetchUserDevices();
     const list = data?.devices || [];
     setDevices(list);
-    const firstId = list[0]?.id ?? null;
+    const firstId = list[0]?.device_uuid ?? null;
     setDeviceId(firstId);
-    return firstId;
   }
 
   async function fetchEvents(idParam?: string) {
@@ -84,10 +85,13 @@ export default function DashboardPage() {
       console.log("Fetching events for device:", id);
       setLoading(true);
       const res = await auth.apiFetch(
-        `${DEVICES_API_URL}events/${deviceId}`, // use path param instead of query
+        `${DEVICES_API_URL}events/${id}`, // use path param instead of query
         { method: "GET" }
       );
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || `Request failed: ${res.status}`);
+      }
       setEvents(data.events || []);
       setLoading(false);
     } catch (error) {

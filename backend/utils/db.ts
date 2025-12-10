@@ -29,6 +29,7 @@ export async function get_user_devices(userId: string) {
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
     if (error) throw error;
+    console.log("User devices for", userId, ":", data);
     return data;
 }
 

@@ -6,15 +6,15 @@ import type { FastifyPluginAsync } from "fastify";
 const events_plugin: FastifyPluginAsync = async (fastify, opts) => {
     // Devices send events here
     fastify.post("/events/add_event", { preHandler: verify_exists }, async (req, reply) => {
-        const device_credential_id = (req as any).device_credentials.id;
+        const device_uuid = (req as any).device_id;
         const { event_type, created_at, details } = req.body as any;
-        console.log("Received event:", { device_credential_id, event_type, created_at, details });
+        console.log("Received event:", { device_uuid, event_type, created_at, details });
         if (!event_type || !created_at) {
             return reply.status(400).send({ error: "Missing event_type or created_at" });
         }
 
         try {
-            await add_event(device_credential_id, event_type, created_at, details);
+            await add_event(device_uuid, event_type, created_at, details);
         } catch (error :any) {
             return reply.status(500).send({ error: `Failed to add event: ${error.message}` });
         }
