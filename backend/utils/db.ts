@@ -256,7 +256,7 @@ export async function get_device_credential_from_UUID(deviceId: string) {
         .from("device_credentials")
         .select("*")
         .eq("device_uuid", deviceId)
-        .maybeSingle();
+        .single();
     if (error) {
         throw error;
     } 

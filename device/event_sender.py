@@ -37,18 +37,15 @@ class EventSender:
         self.video_device_index = video_device_index
         self.audio_device_index = audio_device_index
 
-    def sign_request(self, method, body, ts, secret):
-        body_bytes = body.encode("utf-8") if isinstance(body, str) else body
-        body_hash = hashlib.sha256(body_bytes).hexdigest()
-        msg = f"{method}\n{ts}\n{body_hash}".encode()
-        sig = hmac.new(key=secret.encode("utf-8"), msg=msg, digestmod=hashlib.sha256).hexdigest()
-        return sig
+    def sign_request(self, method, body_json, ts, secret):
+        msg = f"{method}\n{ts}\n{body_json}"
+        return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
     def send_request(self, url, event, device_id, device_secret, request_method="POST"):
         url = BACKEND_URL + url
-        body = json.dumps(event).encode()
         ts = str(int(time.time()))
-        sig = self.sign_request(request_method, body, ts, device_secret)
+        body_json = json.dumps(event, separators=(',', ':'))
+        sig = self.sign_request(request_method, body_json, ts, device_secret)
         headers = {
             "Content-Type": "application/json",
             "Connection": "close",
@@ -61,11 +58,11 @@ class EventSender:
         if request_method == "GET":
             r = s.get(url, headers=headers, timeout=10, stream=False)
         elif request_method == "POST":
-            r = s.post(url, headers=headers, data=body, timeout=10, stream=False)
+            r = s.post(url, headers=headers, data=body_json, timeout=10, stream=False)
         elif request_method == "DELETE":
             r = s.delete(url, headers=headers, timeout=10, stream=False)
         elif request_method == "PUT":
-            r = s.put(url, headers=headers, data=body, timeout=10, stream=False)
+            r = s.put(url, headers=headers, data=body_json, timeout=10, stream=False)
         else:
             raise ValueError(f"Unsupported request method: {request_method}")
         # print(f"Sent {request_method} request to {url}, status code: {r.status_code}. Response: {r.text}")

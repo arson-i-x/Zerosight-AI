@@ -5,108 +5,84 @@ import { verify_signature } from "../utils/crypto.ts";
 
 const supabase = getSupabaseClient();
 
-async function get_device_credentials(req: FastifyRequest, rep: FastifyReply) {
+async function get_device_credentials(req: FastifyRequest, reply: FastifyReply) {
   // try params/query/body first
-  try {
-    const deviceId =
-      (req.params as any)?.device_id ||
-      (req.query as any)?.device_id ||
-      (req.body as any)?.device_id;
-    const deviceData = await get_device_credential_from_UUID(deviceId);
-    (req as any).device_credentials = deviceData;
-    return deviceData;
-  } catch (err) {
-    const sig = (req.headers as any)["x-signature"] || null;
-    const uuid = (req.headers as any)["x-device-id"] || null;
-    const ts = (req.headers as any)["x-ts"] || null;
-    const method = req.method;
-    const body = await req.body as any;
-
-    console.log("Verifying device credentials via API key:", { sig, uuid, ts, method });
-    
-    // timeline check
-    const now = Math.floor(Date.now() / 1000);
-    if (Math.abs(now - Number(ts)) > 60) throw new Error("Timestamp is too far from current time");
-
-    // rehash request using api key
+  const deviceId = (req.params as any)?.device_id || (req.query as any)?.device_id || (req.body as any)?.device_id;
+  // then try headers
+  if (deviceId) {
+    (req as any).device_id = deviceId;
     try {
-      const deviceDataByKey = await get_device_credential_from_UUID(uuid);
-      const apiKey = deviceDataByKey.api_key;
-      console.log("apiKey:", `"${apiKey}"`, apiKey.length);
-      
-      // compare signatures
-      if (!verify_signature(method, ts, body, sig, apiKey)) {
-        return rep.status(400).send({ error: "Invalid signature" });
+      const deviceData = await get_device_credential_from_UUID(deviceId);
+      if (!deviceData) {
+        throw new Error("No device ID credentials found");
       }
-
-      // attach device credentials
-      (req as any).device_credentials = deviceDataByKey;
+      (req as any).device_credentials = deviceData;
+      return reply.status(200).send({ ok: true });
     } catch (err) {
-      throw err;
+      throw new Error("Error getting device credentials: " + err);
     }
-    if (!sig) {
-      throw new Error("No API signature provided");
-    }
-    if (!uuid) {
-      throw new Error("No device UUID provided");
-    }
-    if (!ts) {
-      throw new Error("No timestamp provided");
-    }
-    if (!method) {
-      throw new Error("No method provided");
-    }
-
-    (req as any).device_id = (req as any).device_credentials.device_uuid;
-
-    if (!(req as any).device_credentials || !(req as any).device_id) {
-      return rep.status(400).send({ error: "No device_id provided" });
-    }
-
   }
+  const device_uuid = (req.headers["x-device-id"] as string) || "";
+  if (!device_uuid) {
+    throw new Error("No device ID provided");
+  }
+  const device_credentials = await get_device_credential_from_UUID(device_uuid)
+  if (!device_credentials) {
+    throw new Error("No device ID credentials found");
+  }
+  const apiKey = device_credentials.api_key;
+  if (!apiKey) {
+    throw new Error("No API key found for device");
+  }
+
+  const sig = (req.headers["x-signature"] as string) || "";
+  const ts = (req.headers["x-ts"] as string) || "";
+  const method = req.method || "POST";
+  
+  const rawBody = req.body && Object.keys(req.body).length > 0
+  ? JSON.stringify(req.body)
+  : "{}";
+  
+  if (!verify_signature(method, ts, rawBody, sig, apiKey)) {
+    throw new Error("Invalid signature");
+  }
+  (req as any).device_id = device_uuid;
+  (req as any).device_credentials = device_credentials;
 }
 
+
 async function verify_jwt(req: FastifyRequest, reply: FastifyReply) {
-  try {
-    const auth = (req.headers.authorization || "").trim();
-    if (!auth || !auth.toLowerCase().startsWith("bearer ")) {
-      console.log("Missing or invalid Authorization header");
-      reply.status(401).send({ error: "Missing or invalid Authorization header" });
-      throw new Error("Unauthorized");
-    }
-    const token = auth.slice(7).trim();
-
-    // Try to verify with YOUR server JWT secret first (for server-signed tokens)
-    const jwtSecret = process.env.JWT_SECRET;
-    if (jwtSecret) {
-      try {
-        const payload = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as any;
-        const user = { id: payload?.sub, email: payload?.email };
-        (req as any).user = user;
-        return;
-      } catch (err) {
-        console.log("Server JWT verification failed:", (err as any).message);
-      }
-    }
-
-    // Last resort: ask Supabase to validate (slow)
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data.user) {
-      console.log("Supabase getUser failed:", error?.message);
-      reply.status(401).send({ error: "Invalid token" });
-      throw new Error("Unauthorized");
-    }
-    (req as any).user = data.user;
-  } catch (err) {
-    console.log("verify_jwt exception:", err);
-    reply.status(401).send({ error: "Unauthorized" });
-    throw err;
+  const auth = (req.headers.authorization || "").trim();
+  if (!auth || !auth.toLowerCase().startsWith("bearer ")) {
+    return reply.status(401).send({ error: "Missing or invalid Authorization header" });
   }
+  const token = auth.slice(7).trim();
+ 
+  // Try to verify with YOUR server JWT secret first (for server-signed tokens)
+  const jwtSecret = process.env.JWT_SECRET;
+  if (jwtSecret) {
+    try {
+      const payload = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as any;
+      const user = { id: payload?.sub, email: payload?.email };
+      (req as any).user = user;
+      return;
+    } catch (err) {
+      console.log("Server JWT verification failed:", (err as any).message);
+    }
+  }
+  // Last resort: ask Supabase to validate (slow)
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
+    console.log("Supabase getUser failed:", error?.message);
+    return reply.status(401).send({ error: "Invalid token" });
+  }
+  (req as any).user = data.user;
 }
 
 async function verify_exists(req: FastifyRequest, reply: FastifyReply) {
     // try device_id to get credentials or fall back to api key
     try {
+      console.log("Verifying device credentials via verify_exists");
       await get_device_credentials(req, reply);
     } catch (err) {
       console.log("Error getting device credentials:", err);
@@ -126,7 +102,7 @@ async function verify_action(req: FastifyRequest, reply: FastifyReply) {
       await get_device_credentials(req, reply);
     } catch (err) {
       console.log("Error getting device credentials:", err);
-      return reply.status(400).send({ error: "No device_id provided" });
+      return reply.status(400).send({ error: "Device credentials error" });
     }
 
     try {

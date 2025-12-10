@@ -5,12 +5,13 @@ import { verify_exists, verify_action, verify_jwt } from "../auth/auth.ts";
 const devices_plugin = async (fastify: any, opts: any) => {
     // Get all devices for a user
     fastify.get("/devices/user_devices", { preHandler: verify_jwt }, async (request: any, reply: any) => {
+        const userId = (request as any).user.id || null;
+        console.log("User ID in request:", userId);
+        if (!userId) {
+            return reply.status(400).send({ error: "No user information" });
+        }
+        
         try {
-            const userId = (request as any).user.id || null;
-            console.log("User ID in request:", userId);
-            if (!userId) {
-                return reply.status(400).send({ error: "No user information" });
-            }
             const devices = await get_user_devices(userId);
             return reply.send({ devices });
         } catch (error) {
@@ -20,44 +21,47 @@ const devices_plugin = async (fastify: any, opts: any) => {
 
     // Add a new device for a user
     fastify.post("/devices/add_device", { preHandler: verify_exists }, async (request: any, reply: any) => {
+        // try to get userId from JWT
+        const userId = (request as any).body.user_id || null;
+
+        const deviceName = (request as any).body.device_name;
+
+        if (!deviceName || deviceName.trim() === "" || deviceName.length > 100 ) {
+            return reply.status(400).send({ error: "Invalid device name" });
+        }
+
+        let deviceId = (request as any).device_id;
+
+        const device_credential_id = (request as any).device_credentials?.id;
+
+        if (!deviceName || !deviceId || !device_credential_id) {
+            return reply.status(400).send({ error: "Missing deviceId, deviceName, or device_credential_id" });
+        }
+        if (!userId) {
+            return reply.status(400).send({ error: "No user information" });
+        }
+        
+
         try {
-            // try to get userId from JWT
-            const userId = (request as any).body.user_id || null;
-
-            const deviceName = (request as any).body.device_name;
-
-            if (!deviceName || deviceName.trim() === "" || deviceName.length > 100 ) {
-                return reply.status(400).send({ error: "Invalid device name" });
-            }
-
-            let deviceId = (request as any).device_id;
-
-            const device_credential_id = (request as any).device_credentials?.id;
-
-            if (!deviceName || !deviceId || !device_credential_id) {
-                return reply.status(400).send({ error: "Missing deviceId, deviceName, or device_credential_id" });
-            }
-            if (!userId) {
-                return reply.status(400).send({ error: "No user information" });
-            }
-            try {
-                await add_device(userId, deviceId, deviceName, device_credential_id);
-            } catch (e: any) {
-                return reply.status(500).send({ error: "Failed to add device: " + e.message });
-            }
+            await add_device(userId, deviceId, deviceName, device_credential_id);
             fastify.log.info(`Device ${deviceId} added for user ${userId}`);
-            return reply.status(200).send({ status: " device added " });
-        } catch (error) {
-            fastify.log.error({ err: error }, "Add device error");
-            return reply.status(500).send({ error: "Failed to add device " + error });
+            return reply.status(200).send({ status: " device added " + deviceId });
+        } catch (e: any) {
+            return reply.status(500).send({ error: "Failed to add device: " + e.message });
         }
     });
 
     // Remove a device for a user
     fastify.delete("/devices/remove_device", { preHandler: verify_action }, async (request: any, reply: any) => {
+        const userId = (request as any).user.id;
+        if (!userId) {
+            return reply.status(400).send({ error: "No user information" });
+        }
+        const deviceId = (request as any).device_id;
+        if (!deviceId) {
+            return reply.status(400).send({ error: "No device ID provided" });
+        }
         try {
-            const userId = (request as any).user.id;
-            const deviceId = (request as any).device_id;
             const result = await remove_device(deviceId, userId);
             return reply.send({ result });
         } catch (error) {
@@ -71,11 +75,7 @@ const devices_plugin = async (fastify: any, opts: any) => {
     });
 
     fastify.get("/devices/info", { preHandler: verify_exists }, async (request: any, reply: any) => {
-        try {
-            return reply.send({ deviceCredential: (request as any).device_credentials });
-        } catch (error) {
-            return reply.status(500).send({ error: "Failed to get device info" });
-        }
+        return reply.send({ ok: true, device_credentials: (request as any).device_credentials });
     });
 };
 export default devices_plugin;

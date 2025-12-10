@@ -38,7 +38,8 @@ def poll_for_user_assignment(api_key, max_wait_sec=300, sender: EventSender =Non
             res = sender.send_request(url="devices/info", event={}, device_id=device_uuid, device_secret=api_key, request_method="GET")
             
             if res.status_code == 200:
-                credentials: dict = res.json().get("deviceCredential", {})
+                credentials: dict = res.json().get("device_credentials", {})
+                print(f"Device info response: {credentials}")
                 user_id = credentials.get("user_id")
                 device_id = credentials.get("device_uuid")
                 claimed = credentials.get("claimed")
@@ -49,7 +50,7 @@ def poll_for_user_assignment(api_key, max_wait_sec=300, sender: EventSender =Non
                 else:
                     print(f"  Still waiting... (claimed: {claimed})")
             else:
-                print(f"Poll failed: {res.status_code}")
+                print(f"Poll failed: {res.status_code} {res.text}")
         except Exception as e:
             print(f"Poll error: {e}")
         
@@ -134,6 +135,9 @@ def main():
         user_name = input("Enter your name: ")
         try:
             known_faces = sender.addNewFace(name=user_name)
+            known_faces = [known_faces]  # wrap in list
+            print("✓ New face encoding added.")
+
         except Exception as e:
             print(f"Failed to add new encoding: {e}")
             return

@@ -5,17 +5,19 @@ const KEY = Buffer.from(process.env.FACE_ENC_KEY_BASE64!, 'base64'); // 32 bytes
 const SALT = process.env.DEVICE_KEY_SALT || "default-salt";
 
 export function verify_signature(method: string, ts: string, body: any, signature: string, apiKey: string): boolean {
-  if (!signature) return false;
-  const rawBody = body ? JSON.stringify(body) : "";
-  const bodyHash = crypto.createHash("sha256").update(rawBody).digest("hex");
+  if (!signature || !ts || !apiKey || !method) return false;
 
-  const msg = `${method}\n${ts}\n${bodyHash}`;
-
+  const msg = `${method}\n${ts}\n${body}`;
+  console.log("NODE MESSAGE:", JSON.stringify(msg));
   const expectedSig = crypto
-    .createHmac("sha256", Buffer.from(apiKey, "utf8"))
+    .createHmac("sha256", apiKey)
     .update(msg)
     .digest("hex");
-  return expectedSig === signature;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature, "hex"),
+    Buffer.from(expectedSig, "hex")
+  );
 }
 
 export function encryptFaceEncoding(plainNums: number[]): string {

@@ -6,8 +6,12 @@ const faces_plugin = async (fastify: any, opts: any) => {
 
     // Get all face encodings for a user
     fastify.get("/faces/get_face_encodings", { preHandler: verify_exists }, async (request: any, reply: any) => {
+        const deviceId = (request as any).device_id;
+        if (!deviceId) {
+            return reply.status(400).send({ error: "No device ID provided" });
+        }
+        
         try {
-            const deviceId = (request as any).device_id;
             const faceEncodings = await get_face_encodings(deviceId);
             return reply.send({ faceEncodings });
         } catch (error) {
@@ -20,8 +24,12 @@ const faces_plugin = async (fastify: any, opts: any) => {
     });
 
     fastify.delete("/faces/delete_all_face_encodings", { preHandler: verify_exists }, async (request: any, reply: any) => {
+        const userId = (request as any).user.id;
+        if (!userId) {
+            return reply.status(400).send({ error: "No user information" });
+        }
+
         try {
-            const userId = (request as any).user.id;
             const result = await delete_all_face_encodings(userId);
             return reply.send({ result });
         } catch (error) {
@@ -30,9 +38,17 @@ const faces_plugin = async (fastify: any, opts: any) => {
     });
 
     fastify.post("/faces/add_face_encoding", { preHandler: verify_exists }, async (request: any, reply: any) => {
+        const { name, face } = request.body;
+        if (!name || !face) {
+            return reply.status(400).send({ error: "Missing name or face encoding" });
+        }
+
+        const deviceId = (request as any).device_id;
+        if (!deviceId) {
+            return reply.status(400).send({ error: "No device ID provided" });
+        }
+        
         try {
-            const { name, face } = request.body;
-            const deviceId = (request as any).device_id;
             const faceEncoding = await add_face_encoding(deviceId, name, face);
             return reply.send({ faceEncoding });
         } catch (error) {
