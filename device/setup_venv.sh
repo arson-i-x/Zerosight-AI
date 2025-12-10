@@ -173,9 +173,16 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
-echo "Creating venv..."
-$PYTHON -m venv venv
+# Remove old venv if necessary
+rm -rf venv
 
+# Create new venv
+echo "Creating venv..."
+python3 -m venv venv
+source venv/bin/activate
+
+# Upgrade pip inside venv
+pip install --upgrade pip
 echo "Activating venv..."
 source venv/bin/activate
 
@@ -193,6 +200,7 @@ sudo apt install -y portaudio19-dev libportaudio2 libportaudiocpp0 ffmpeg
 sudo apt install -y libsndfile1-dev
 
 echo "Installing dependencies..."
+
 pip install \
     cmake \
     face_recognition \
