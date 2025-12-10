@@ -176,54 +176,40 @@ fi
 # Remove old venv if necessary
 rm -rf venv
 
+# Create new venv
+echo "Creating venv..."
+python3 -m venv venv
+source venv/bin/activate
+
+# Upgrade pip inside venv
+pip install --upgrade pip
+echo "Activating venv..."
+source venv/bin/activate
+
+echo "Upgrading pip..."
+pip install --upgrade pip
+
 # For dlib
 sudo apt update
-sudo apt install -y \
-    build-essential \
-    cmake \
-    python3.10-dev \
-    python3.10-venv \
-    libopenblas-dev \
-    liblapack-dev \
-    libatlas-base-dev \
-    libportaudio2 \
-    portaudio19-dev \
-    libportaudiocpp0 \
-    ffmpeg \
-    libsndfile1-dev
-    
+sudo apt install -y build-essential cmake python3-dev
+
 # For PyAudio
 sudo apt install -y portaudio19-dev libportaudio2 libportaudiocpp0 ffmpeg
 
 # Optional (helps with audio processing, e.g., librosa)
 sudo apt install -y libsndfile1-dev
 
-
-# Create new venv
-echo "Creating venv..."
-python3.10 -m venv venv
-source venv/bin/activate
-
-# Upgrade pip inside venv
-pip install --upgrade pip
-echo "Activating venv..."
-
-echo "Upgrading pip..."
-pip install --upgrade pip
-
 echo "Installing dependencies..."
 
-# Install cmake wheel first (prebuilt)
-pip install cmake
-
-# Install packages that can use piwheels (prebuilt for Raspberry Pi)
-pip install numpy opencv-python pillow
-
-# Then install dlib and PyAudio (now dependencies exist)
-pip install dlib pyaudio
-
-# Finally the rest
-pip install face_recognition librosa requests
+pip install \
+    cmake \
+    face_recognition \
+    dlib \
+    opencv-python \
+    numpy \
+    librosa \
+    pyaudio \
+    requests
 
 echo
 echo "=== Virtual environment ready! ==="
