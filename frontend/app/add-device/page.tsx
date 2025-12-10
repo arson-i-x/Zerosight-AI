@@ -3,17 +3,16 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../providers/AuthProvider";
 
-const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL;
-const DEVICES_API_URL = `${BACKEND}/API/devices`;
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL + "/API/devices" || 
+                    "http://localhost:8000/API/devices";
 
 export default function AddDevicePage() {
   const router = useRouter();
-  const { ready, apiFetch, accessToken } = useAuth();
+  const { ready, accessToken, supabase, apiFetch } = useAuth();
   const [deviceId, setDeviceId] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const auth = useAuth();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,18 +28,8 @@ export default function AddDevicePage() {
 
     setLoading(true);
     try {
-      const res = await apiFetch(`${DEVICES_API_URL}/add_device`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: auth.userId, device_id: deviceId, device_name: deviceName }),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || `Request failed: ${res.status}`);
-      }
-
-      // success -> go back to dashboard
+      const device = await claimDevice(deviceId);
+      console.log("Device claimed:", device);
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || String(err));
@@ -48,6 +37,58 @@ export default function AddDevicePage() {
       setLoading(false);
     }
   }
+
+  async function claimDevice(deviceUUID: string) {
+    if (!accessToken) {
+      throw new Error("You must be logged in to claim a device.");
+    }
+    if (!supabase) {
+      throw new Error("Supabase client is not initialized.");
+    }
+    if (!deviceUUID) {
+      throw new Error("Device UUID is required.");
+    }
+    const session = (await supabase.auth.getSession()).data.session ?? null;
+
+    if (!session || !session.user) {
+      throw new Error("Invalid Supabase session.");
+    }
+
+    // Attempt to claim
+    const { data, error } = await supabase
+      .from("device_credentials")
+      .update({
+        claimed: true,
+        user_id: session.user.id,
+      })
+      .eq("device_uuid", deviceUUID)
+      .eq("claimed", false) // cannot overwrite claimed devices
+      .select()
+      .maybeSingle();
+    if (!error && data) {
+      const res = await apiFetch(BACKEND_URL+`/add_device`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ deviceId: deviceUUID, deviceName }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.error || `Failed to claim device: ${res.status}`);
+      }
+    }
+    if (error) {
+      throw new Error("Failed to claim device: " + error.message);
+    }
+
+    if (!data) {
+      throw new Error("Device is already claimed.");
+    }
+
+    return data;
+}
 
   return (
     <div className="p-6 max-w-lg mx-auto">

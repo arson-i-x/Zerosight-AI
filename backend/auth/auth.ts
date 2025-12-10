@@ -1,27 +1,14 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { get_device_credential_from_UUID, getSupabaseClient, verify_device_action } from "../utils/db.ts";
-import jwt from "jsonwebtoken";
 import { verify_signature } from "../utils/crypto.ts";
+import jwt from "jsonwebtoken";
 
 const supabase = getSupabaseClient();
 
-async function get_device_credentials(req: FastifyRequest, reply: FastifyReply) {
-  // try params/query/body first
-  const deviceId = (req.params as any)?.device_id || (req.query as any)?.device_id || (req.body as any)?.device_id;
-  // then try headers
-  if (deviceId) {
-    (req as any).device_id = deviceId;
-    try {
-      const deviceData = await get_device_credential_from_UUID(deviceId);
-      if (!deviceData) {
-        throw new Error("No device ID credentials found");
-      }
-      (req as any).device_credentials = deviceData;
-      return reply.status(200).send({ ok: true });
-    } catch (err) {
-      throw new Error("Error getting device credentials: " + err);
-    }
-  }
+const JWT_Secret = process.env.JWT_SECRET || "";
+
+async function get_device_credentials_from_headers(req: FastifyRequest, reply: FastifyReply) {
+  // fall back to headers with signature verification
   const device_uuid = (req.headers["x-device-id"] as string) || "";
   if (!device_uuid) {
     throw new Error("No device ID provided");
@@ -50,67 +37,50 @@ async function get_device_credentials(req: FastifyRequest, reply: FastifyReply) 
   (req as any).device_credentials = device_credentials;
 }
 
-
-async function verify_jwt(req: FastifyRequest, reply: FastifyReply) {
+async function get_jwt_from_headers(req: FastifyRequest, reply: FastifyReply) {
   const auth = (req.headers.authorization || "").trim();
   if (!auth || !auth.toLowerCase().startsWith("bearer ")) {
-    return reply.status(401).send({ error: "Missing or invalid Authorization header" });
+    throw new Error("No authorization token provided");
   }
   const token = auth.slice(7).trim();
  
-  // Try to verify with YOUR server JWT secret first (for server-signed tokens)
-  const jwtSecret = process.env.JWT_SECRET;
-  if (jwtSecret) {
+  // verify server JWT token
+  if (JWT_Secret) {
     try {
-      const payload = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as any;
-      const user = { id: payload?.sub, email: payload?.email };
-      (req as any).user = user;
+      const payload = jwt.verify(token, JWT_Secret) as any;
+      (req as any).user = { id: payload.sub, provider: payload.provider };
       return;
     } catch (err) {
-      console.log("Server JWT verification failed:", (err as any).message);
+      throw new Error("JWT verification failed: " + (err as any).message);
     }
+  } else {
+    throw new Error("Server misconfiguration: missing SUPABASE_JWT_SECRET");
   }
-  // Last resort: ask Supabase to validate (slow)
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
-    console.log("Supabase getUser failed:", error?.message);
-    return reply.status(401).send({ error: "Invalid token" });
+}
+
+async function verify_jwt(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    await get_jwt_from_headers(req, reply);
+  } catch (err) {
+    return reply.status(401).send({ error: "Error verifying JWT: " + (err as any).message });
   }
-  (req as any).user = data.user;
 }
 
 async function verify_exists(req: FastifyRequest, reply: FastifyReply) {
-    // try device_id to get credentials or fall back to api key
-    try {
-      console.log("Verifying device credentials via verify_exists");
-      await get_device_credentials(req, reply);
-    } catch (err) {
-      console.log("Error getting device credentials:", err);
-    }
+  // attach JWT user if possible
+  try {
+    await get_jwt_from_headers(req, reply);
+  } catch (err) {
+    console.log("No valid JWT found in verify_exists:", (err as any).message);
+  }
+
+  // verify device credentials
+  try {
+    console.log("Verifying device credentials via verify_exists");
+    await get_device_credentials_from_headers(req, reply);
+  } catch (err) {
+    return reply.status(401).send({ error: "Error verifying device: " + (err as any).message });
+  }
 }
 
-async function verify_action(req: FastifyRequest, reply: FastifyReply) {
-    // first verify JWT to get user
-    try {
-      await verify_jwt(req, reply);  
-    } catch (err) {
-      console.log("Error verifying JWT:", err);
-      return reply.status(401).send({ error: "Unauthorized" });
-    }
-    // try device_id to get credentials or fall back to api key
-    try {
-      await get_device_credentials(req, reply);
-    } catch (err) {
-      console.log("Error getting device credentials:", err);
-      return reply.status(400).send({ error: "Device credentials error" });
-    }
-
-    try {
-      await verify_device_action((req as any).device_id, (req as any).user.id);
-    } catch (err) {
-      console.log("Error verifying device action:", err);
-      return reply.status(403).send({ error: "Device not authorized for this user" });
-    }
-}
-
-export { verify_jwt, verify_exists, verify_action };
+export { verify_jwt, verify_exists };

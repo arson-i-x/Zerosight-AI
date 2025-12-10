@@ -23,6 +23,7 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
   fastify.post("/login", async (request, reply) => {
     const { email, password } = request.body as { email: string; password: string};
     const { data, error } = await supa.auth.signInWithPassword({ email, password });
+    const supabaseToken = data.session?.refresh_token || '';
 
     if (error) return reply.status(401).send({ error: error.message });
 
@@ -60,15 +61,17 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
       maxAge: REFRESH_TOKEN_AGE,
     });
 
+    // Set HttpOnly refresh cookie
+    reply.setCookie('supabase_token', supabaseToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: REFRESH_TOKEN_AGE,
+    });
+
     // Fetch user profile
     try {
-      const profile = await get_user_profile(userId);
-      console.log("User profile on login:", profile);
-      return reply.send({ access_token: accessToken, user_id: userId, full_name: profile.full_name, avatar_url: profile.avatar_url});
-    } catch (e) {
-      fastify.log.warn(`No profile found for user ${userId} on login`);
-      // get user profile failed, get pending profile if exists
-      fastify.log.info(`Checking for pending profile for user ${userId} on login`);
       const pending = await get_pending_profile(email);
       if (pending) {
         fastify.log.info(`Applying pending profile for user ${userId} on login`);
@@ -76,7 +79,19 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
         await upsert_user_profile(email, userId, pending.full_name, pending.avatar_url || undefined);
         await delete_pending_profile(email);
       }
+    } catch (e) {
+      fastify.log.warn(`Failed to apply pending profile for user ${userId} on login: ${String(e)}`);
     }
+    try {
+      const profile = await get_user_profile(userId);
+      return reply.code(200).send({ access_token: accessToken, 
+                          user_id: userId, 
+                          full_name: profile?.full_name, 
+                          avatar_url: profile?.avatar_url });
+    } catch (e) {
+      fastify.log.warn(`No profile found for user ${userId} on login`);
+    }
+
   });
 
   fastify.post("/signup", async (request, reply) => {
@@ -133,7 +148,17 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
   // Refresh access token using HttpOnly refresh cookie (rotates refresh token)
   fastify.post('/refresh', async (request, reply) => {
     const raw = (request.cookies && request.cookies['refresh_token']) || null;
-    if (!raw) return reply.code(401).send({ error: 'No refresh token' });
+    const cookieSupabaseToken = (request.cookies && request.cookies['supabase_token']) || null;
+    if (!raw || !cookieSupabaseToken) return reply.code(401).send({ error: 'No refresh token' });
+
+    const { data, error } = await supa.auth.refreshSession({
+      refresh_token: cookieSupabaseToken
+    });
+    const newSupabaseSession = data.session;
+    if (error || !newSupabaseSession) {
+      fastify.log.error('Supabase session refresh error: ' + String(error?.message));
+      return reply.code(401).send({ error: 'Invalid Supabase session' });
+    }
 
     const tokenHash = crypto.createHash('sha256').update(String(raw)).digest('hex');
     const { data: row, error: selErr } = await supa.from('refresh_tokens').select('*').eq('token_hash', tokenHash).maybeSingle();
@@ -149,7 +174,10 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
     const newRefresh = uuidv4() + '.' + crypto.randomBytes(24).toString('hex');
     const newHash = crypto.createHash('sha256').update(newRefresh).digest('hex');
     try {
-      await supa.from('refresh_tokens').insert([{ id: uuidv4(), user_id: row.user_id, token_hash: newHash, expires_at: new Date(Date.now() + REFRESH_TOKEN_AGE * 1000).toISOString() }]);
+      await supa.from('refresh_tokens').insert([{ id: uuidv4(), 
+                                                  user_id: row.user_id, 
+                                                  token_hash: newHash, 
+                                                  expires_at: new Date(Date.now() + REFRESH_TOKEN_AGE * 1000).toISOString() }]);
       await supa.from('refresh_tokens').update({ revoked: true }).eq('id', row.id);
     } catch (e) {
       fastify.log.error('Refresh token rotation error: ' + String(e));
@@ -174,10 +202,22 @@ const auth_plugin: FastifyPluginAsync = async (fastify, opts) => {
       path: '/',
       maxAge: REFRESH_TOKEN_AGE,
     });
+
+    reply.setCookie('supabase_token', newSupabaseSession?.refresh_token || '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: REFRESH_TOKEN_AGE,
+    });
+
     console.log("User profile on refresh:", profile);
     console.log("Access token on refresh:", accessToken);
-    return reply.send({ access_token: accessToken, user_id: row.user_id, full_name: profile?.full_name || '', avatar_url: profile?.avatar_url || '' });
-  });
+    return reply.code(200).send({ access_token: accessToken, 
+                          user_id: row.user_id, 
+                          full_name: profile?.full_name, 
+                          avatar_url: profile?.avatar_url, 
+                          supabaseSession: newSupabaseSession });});
 
   // Logout: revoke refresh token and clear cookie
   fastify.post('/logout', async (request, reply) => {

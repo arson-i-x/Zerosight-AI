@@ -1,8 +1,16 @@
 "use client";
+import { Session, SupabaseClient } from "@supabase/supabase-js";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey);
 
 type AuthContextType = {
   accessToken: string | null;
+  supabase: any;
   userId: string | null;
   fullName: string | null;
   avatarUrl: string | null;
@@ -44,6 +52,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
+// Helper to set session both in state and Supabase client
+  const setSession = async (session: Session | null) => {
+    supabase.auth.setSession({
+        access_token: session?.access_token || "",
+        refresh_token: session?.refresh_token || "",
+    });
+  };
+
   // Try to obtain an access token from refresh cookie on mount
   useEffect(() => {
     let mounted = true;
@@ -54,17 +70,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           setAccessToken(data.access_token ?? null);
+          await setSession(data.supabaseSession ?? null);
           setUserId(data.user_id ?? null);
           setFullName(data.full_name ?? null);
           setAvatarUrl(data.avatar_url ?? null);
         } else {
           setAccessToken(null);
+          await setSession(null);
           setUserId(null);
           setFullName(null);
           setAvatarUrl(null);
         }
       } catch (e) {
         setAccessToken(null);
+        await setSession(null);
         setUserId(null);
         setFullName(null);
         setAvatarUrl(null);
@@ -88,9 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
       const data = await res.json();
-      console.log("Login response data:", data);
       if (!res.ok) return false;
       setAccessToken(data.access_token ?? null);
+      await setSession(data.supabaseSession ?? null);
       setUserId(data.user_id ?? null);
       setFullName(data.full_name ?? null);
       setAvatarUrl(data.avatar_url ?? null);
@@ -108,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
     setAccessToken(null);
+    await setSession(null);
     setUserId(null);
     setFullName(null);
     setAvatarUrl(null);
@@ -119,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ accessToken, userId, fullName, avatarUrl, login, logout, ready, apiFetch }}
+      value={{ accessToken, supabase, userId, fullName, avatarUrl, login, logout, ready, apiFetch }}
     >
       {children}
     </AuthContext.Provider>

@@ -32,7 +32,7 @@ export async function get_user_devices(userId: string) {
     return data;
 }
 
-export async function add_device(userId: string, deviceId: string, deviceName: string, credentialId: string) {
+export async function add_device(userId: string, deviceId: string, deviceName: string) {
     if (!userId) {
         throw new Error("No user ID provided");
     }
@@ -42,18 +42,9 @@ export async function add_device(userId: string, deviceId: string, deviceName: s
     if (!deviceName) {
         throw new Error("No device name provided");
     }
-    if (!credentialId) {
-        throw new Error("Device credential not found for device ID");
-    }
-    const { error: insertError } = await supabase
-        .from("device_credentials")
-        .update({ user_id: userId, claimed: true })
-        .eq("id", credentialId)
-    if (insertError) throw new Error("CREDENTIALS ERROR:" + insertError.message);
     const { data, error } = await supabase
         .from("devices")
-        .upsert({ user_id: userId, device_credential_id: credentialId, name: deviceName })
-        .eq("id", deviceId)
+        .insert({ user_id: userId, device_uuid: deviceId, name: deviceName })
     if (error) throw new Error("UPDATE ERROR:" + error.message);
     return data;
 }
@@ -68,7 +59,7 @@ export async function remove_device(deviceId: string, userId: string) {
     const { data, error } = await supabase
         .from("devices")
         .delete()
-        .eq("id", deviceId)
+        .eq("device_uuid", deviceId)
         .eq("user_id", userId);
     if (error) throw error;
     return data;
@@ -248,24 +239,6 @@ export async function verify_device_action(deviceId: string, userId: string) {
     return data;
 }
 
-export async function get_device_credential_from_UUID(deviceId: string) {
-    if (!deviceId) {
-        throw new Error("No device ID provided");
-    }
-    const { data, error } = await supabase
-        .from("device_credentials")
-        .select("*")
-        .eq("device_uuid", deviceId)
-        .single();
-    if (error) {
-        throw error;
-    } 
-    if (!data) {
-        throw new Error("Device uuid does not exist");
-    }
-    return data;
-}
-
 export async function get_device_credential_from_api_key(apiKey: string) {
     if (!apiKey) {
         throw new Error("No API key provided");
@@ -280,6 +253,21 @@ export async function get_device_credential_from_api_key(apiKey: string) {
     } 
     if (!data) {
         throw new Error("Device key does not exist");
+    }
+    return data;
+}
+
+export async function get_device_credential_from_UUID(deviceUUID: string) {
+    if (!deviceUUID) {
+        throw new Error("No device UUID provided");
+    }
+    const { data, error } = await supabase
+        .from("device_credentials")
+        .select("*")
+        .eq("device_uuid", deviceUUID)
+        .single();
+    if (error) {
+        throw error;
     }
     return data;
 }
