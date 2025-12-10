@@ -157,3 +157,43 @@ echo " AP SSID: zerosight-setup"
 echo " Password: zerosight123"
 echo " Server: http://192.168.4.1/"
 echo "-------------------------------------"
+
+#!/bin/bash
+echo "=== Setting up Python 3.10 virtual environment ==="
+
+# Python 3.10 may be installed as python3.10 or python3
+PYTHON=$(which python3.10 || which python3)
+
+echo "Using Python: $PYTHON"
+
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: python3.10 not found!"
+    echo "Install with:"
+    echo "  sudo apt install python3.10 python3.10-venv python3.10-dev"
+    exit 1
+fi
+
+echo "Creating venv..."
+$PYTHON -m venv venv
+
+echo "Activating venv..."
+source venv/bin/activate
+
+echo "Upgrading pip..."
+pip install --upgrade pip
+
+echo "Installing dependencies..."
+pip install \
+    cmake \
+    face_recognition \
+    dlib \
+    opencv-python \
+    numpy \
+    librosa \
+    pyaudio \
+    requests
+
+echo
+echo "=== Virtual environment ready! ==="
+echo "To activate later:"
+echo "    source venv/bin/activate"
